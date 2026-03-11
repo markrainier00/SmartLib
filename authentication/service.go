@@ -1,10 +1,14 @@
 package authentication
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"time"
+
 	"SmartLib_Likod/model"
 	"SmartLib_Likod/model/status"
 	"SmartLib_Likod/utils"
-	"errors"
 )
 
 type RegisterInput struct {
@@ -14,7 +18,6 @@ type RegisterInput struct {
 	SchoolID  string `json:"school_id"`
 	Program   string `json:"program"`
 	Year      string `json:"year"`
-	Status    string `json:"status"`
 	Password  string `json:"password"`
 }
 
@@ -23,15 +26,24 @@ type SigninInput struct {
 	Password   string `json:"password"`
 }
 
+type ForgotPasswordInput struct {
+	Identifier string `json:"identifier"`
+}
+
+type ResetPasswordInput struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
 func RegisterUser(input RegisterInput) (*model.User, error) {
 	existing, err := FindUserByEmailOrSchoolID(input.Email, input.SchoolID)
 	if err == nil && existing.ID != 0 {
-		return nil, errors.New("email or school ID already registered")
+		return nil, errors.New("Email or school ID already registered")
 	}
 
 	hashedPassword, err := utils.HashPassword(input.Password)
 	if err != nil {
-		return nil, errors.New("failed to process password")
+		return nil, errors.New("Failed to process password")
 	}
 
 	user := &model.User{
@@ -46,7 +58,7 @@ func RegisterUser(input RegisterInput) (*model.User, error) {
 	}
 
 	if err := CreateUser(user); err != nil {
-		return nil, errors.New("failed to create user")
+		return nil, errors.New("Failed to create user")
 	}
 
 	return user, nil
@@ -71,4 +83,60 @@ func SigninUser(input SigninInput) (*model.User, error) {
 	}
 
 	return user, nil
+}
+
+func ForgotPasswordService(input ForgotPasswordInput) error {
+	user, err := FindUserByEmailOrSchoolID(input.Identifier, input.Identifier)
+	if err != nil {
+		return nil
+	}
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return errors.New("Failed to generate token")
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	reset := &model.PasswordReset{
+		UserID:    user.ID,
+		Token:     token,
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+		Used:      false,
+	}
+
+	if err := CreatePasswordReset(reset); err != nil {
+		return errors.New("Failed to create reset token")
+	}
+
+	if err := utils.SendResetEmail(user.Email, token); err != nil {
+		return errors.New("Failed to send reset email")
+	}
+
+	return nil
+}
+
+func ResetPasswordService(input ResetPasswordInput) error {
+	reset, err := FindPasswordResetByToken(input.Token)
+	if err != nil {
+		return errors.New("Invalid or expired reset link")
+	}
+
+	if time.Now().After(reset.ExpiresAt) {
+		return errors.New("Reset link has expired, please request a new one")
+	}
+
+	if len(input.Password) < 8 {
+		return errors.New("Password must be at least 8 characters")
+	}
+
+	hashedPassword, err := utils.HashPassword(input.Password)
+	if err != nil {
+		return errors.New("Failed to process password")
+	}
+
+	if err := UpdateUserPassword(reset.UserID, hashedPassword); err != nil {
+		return errors.New("Failed to update password")
+	}
+
+	return MarkTokenUsed(input.Token)
 }

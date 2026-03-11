@@ -8,7 +8,6 @@ import (
 	"github.com/joho/godotenv"
 
 	"SmartLib_Likod/database"
-	"SmartLib_Likod/handler"
 	"SmartLib_Likod/middleware"
 	"SmartLib_Likod/model"
 	"SmartLib_Likod/routes"
@@ -21,7 +20,7 @@ func main() {
 
 	database.ConnectDB()
 
-	database.DB.AutoMigrate(&model.User{})
+	database.DB.AutoMigrate(&model.User{}, &model.PasswordReset{})
 
 	app := fiber.New()
 
@@ -33,8 +32,6 @@ func main() {
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "API is running"})
 	})
-
-	_ = handler.Register
 
 	port := os.Getenv("PORT")
 	if port == "" {

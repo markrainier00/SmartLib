@@ -86,3 +86,65 @@ func Signin(c *fiber.Ctx) error {
 		Data:    user,
 	})
 }
+
+func ForgotPassword(c *fiber.Ctx) error {
+	var input authentication.ForgotPasswordInput
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode404,
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	if input.Identifier == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode401,
+			IsSuccess: false,
+			Error:     nil,
+		})
+	}
+
+	authentication.ForgotPasswordService(input)
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "If an account exists for this email, you’ll receive a password reset link shortly.",
+		Data:    nil,
+	})
+}
+
+func ResetPassword(c *fiber.Ctx) error {
+	var input authentication.ResetPasswordInput
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode404,
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	if input.Token == "" || input.Password == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode401,
+			IsSuccess: false,
+			Error:     nil,
+		})
+	}
+
+	if err := authentication.ResetPasswordService(input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   err.Error(),
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Password reset successfully",
+		Data:    nil,
+	})
+}
