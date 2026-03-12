@@ -1,16 +1,21 @@
 package handler
 
 import (
+	"fmt"
+	"os"
+	"time"
+
 	errormodel "SmartLib_Likod/model/error"
 	"SmartLib_Likod/model/response"
 	"SmartLib_Likod/model/status"
 	"SmartLib_Likod/services"
 
 	"github.com/gofiber/fiber/v2"
+	storage_go "github.com/supabase-community/storage-go"
 )
 
-func Register(c *fiber.Ctx) error {
-	var input services.RegisterInput
+func SendOTP(c *fiber.Ctx) error {
+	var input services.SendOTPInput
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
@@ -20,7 +25,7 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	if input.FirstName == "" || input.LastName == "" || input.Email == "" || input.SchoolID == "" || input.Program == "" || input.Year == "" || input.Password == "" {
+	if input.Email == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
 			Message:   status.RetCode401,
 			IsSuccess: false,
@@ -28,14 +33,151 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	if len(input.Password) < 8 {
+	if err := services.SendOTPService(input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
-			Message:   "Password must be at least 8 characters",
+			Message:   err.Error(),
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "An OTP is sent to email.",
+		Data:    nil,
+	})
+}
+
+func VerifyOTP(c *fiber.Ctx) error {
+	var input services.VerifyOTPInput
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode404,
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	if input.Email == "" || input.OTP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode401,
 			IsSuccess: false,
 			Error:     nil,
 		})
 	}
 
+	if err := services.VerifyOTPService(input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   err.Error(),
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "OTP verified successfully.",
+		Data:    nil,
+	})
+}
+
+func CheckSchoolID(c *fiber.Ctx) error {
+	var input services.CheckSchoolIDInput
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode404,
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	if input.SchoolID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode401,
+			IsSuccess: false,
+			Error:     nil,
+		})
+	}
+
+	if err := services.CheckSchoolIDService(input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   err.Error(),
+			IsSuccess: false,
+			Error:     err,
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "OTP verified successfully.",
+		Data:    nil,
+	})
+}
+
+func RegisterHandler(c *fiber.Ctx) error {
+	var savedPath string
+
+	// 1. Handle image upload to Supabase Storage
+	file, err := c.FormFile("school_id_image")
+	if err == nil {
+		src, err := file.Open()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(errormodel.ErrorModel{
+				Message:   "Failed to open image",
+				IsSuccess: false,
+				Error:     err,
+			})
+		}
+		defer src.Close()
+
+		client := storage_go.NewClient(
+			os.Getenv("DB_URL")+"/storage/v1",
+			os.Getenv("DB_SERVICE_KEY"),
+			nil,
+		)
+
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), file.Filename)
+
+		_, err = client.UploadFile("school-id-images", filename, src, storage_go.FileOptions{
+			ContentType: &file.Header["Content-Type"][0],
+		})
+		if err != nil {
+			fmt.Println("❌ Upload error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(errormodel.ErrorModel{
+				Message:   "Failed to upload image",
+				IsSuccess: false,
+				Error:     err,
+			})
+		}
+
+		savedPath = os.Getenv("DB_URL") + "/storage/v1/object/public/school-id-images/" + filename
+	}
+
+	// 2. Build input
+	input := services.RegisterInput{
+		FirstName:     c.FormValue("firstname"),
+		LastName:      c.FormValue("lastname"),
+		Email:         c.FormValue("email"),
+		SchoolID:      c.FormValue("school_id"),
+		Program:       c.FormValue("program"),
+		Year:          c.FormValue("year"),
+		Password:      c.FormValue("password"),
+		SchoolIDImage: savedPath,
+	}
+
+	// 3. Validate required fields
+	if input.FirstName == "" || input.LastName == "" || input.Email == "" ||
+		input.SchoolID == "" || input.Program == "" || input.Year == "" || input.Password == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+			Message:   status.RetCode401,
+			IsSuccess: false,
+			Error:     nil,
+		})
+	}
+
+	// 4. Call service
 	user, err := services.RegisterUser(input)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
@@ -45,12 +187,56 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	// 5. Send response
 	return c.Status(fiber.StatusCreated).JSON(response.ResponseModel{
 		RetCode: "201",
-		Message: "Registration successful",
+		Message: "Account created successfully",
 		Data:    user,
 	})
 }
+
+// func Register(c *fiber.Ctx) error {
+// 	var input services.RegisterInput
+
+// 	if err := c.BodyParser(&input); err != nil {
+// 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+// 			Message:   status.RetCode404,
+// 			IsSuccess: false,
+// 			Error:     err,
+// 		})
+// 	}
+
+// 	if input.FirstName == "" || input.LastName == "" || input.Email == "" || input.SchoolID == "" || input.Program == "" || input.Year == "" || input.Password == "" {
+// 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+// 			Message:   status.RetCode401,
+// 			IsSuccess: false,
+// 			Error:     nil,
+// 		})
+// 	}
+
+// 	if len(input.Password) < 8 {
+// 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+// 			Message:   "Password must be at least 8 characters",
+// 			IsSuccess: false,
+// 			Error:     nil,
+// 		})
+// 	}
+
+// 	user, err := services.RegisterUser(input)
+// 	if err != nil {
+// 		return c.Status(fiber.StatusBadRequest).JSON(errormodel.ErrorModel{
+// 			Message:   err.Error(),
+// 			IsSuccess: false,
+// 			Error:     err,
+// 		})
+// 	}
+
+// 	return c.Status(fiber.StatusCreated).JSON(response.ResponseModel{
+// 		RetCode: "201",
+// 		Message: "Registration successful",
+// 		Data:    user,
+// 	})
+// }
 
 func Signin(c *fiber.Ctx) error {
 	var input services.SigninInput

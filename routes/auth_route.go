@@ -8,7 +8,10 @@ import (
 
 func SetupAuthRoutes(api fiber.Router) {
 	auth := api.Group("/auth")
-	auth.Post("/register", handler.Register)
+	auth.Post("/send-otp", handler.SendOTP)
+	auth.Post("/verify-otp", handler.VerifyOTP)
+	auth.Post("/check-school-id", handler.CheckSchoolID)
+	auth.Post("/register", handler.RegisterHandler)
 	auth.Post("/signin", handler.Signin)
 	auth.Post("/forgot-password", handler.ForgotPassword)
 	auth.Post("/reset-password", handler.ResetPassword)

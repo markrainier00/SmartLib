@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"math/big"
 	"time"
 
 	"SmartLib_Likod/model"
@@ -12,14 +14,28 @@ import (
 	"SmartLib_Likod/utils"
 )
 
+type SendOTPInput struct {
+	Email string `json:"email"`
+}
+
+type VerifyOTPInput struct {
+	Email string `json:"email"`
+	OTP   string `json:"otp"`
+}
+
+type CheckSchoolIDInput struct {
+	SchoolID string `json:"school_id"`
+}
+
 type RegisterInput struct {
-	FirstName string `json:"firstname"`
-	LastName  string `json:"lastname"`
-	Email     string `json:"email"`
-	SchoolID  string `json:"school_id"`
-	Program   string `json:"program"`
-	Year      string `json:"year"`
-	Password  string `json:"password"`
+	FirstName     string `json:"firstname"`
+	LastName      string `json:"lastname"`
+	Email         string `json:"email"`
+	SchoolID      string `json:"school_id"`
+	Program       string `json:"program"`
+	Year          string `json:"year"`
+	Password      string `json:"password"`
+	SchoolIDImage string `json:"school_id_image"`
 }
 
 type SigninInput struct {
@@ -36,6 +52,59 @@ type ResetPasswordInput struct {
 	Password string `json:"password"`
 }
 
+func SendOTPService(input SendOTPInput) error {
+	user, err := repositories.FindUserByEmail(input.Email)
+	if err == nil && user != nil {
+		return errors.New("Email already registered")
+	}
+
+	max := big.NewInt(1000000)
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return errors.New("failed to generate OTP")
+	}
+
+	otp := fmt.Sprintf("%06d", n.Int64())
+
+	verify := &model.OTPCode{
+		Email:     input.Email,
+		OTP:       otp,
+		ExpiresAt: time.Now().Add(5 * time.Minute),
+		Used:      false,
+	}
+
+	if err := repositories.CreateOTPCode(verify); err != nil {
+		return errors.New("failed to create OTP")
+	}
+
+	if err := utils.SendOTPEmail(input.Email, otp); err != nil {
+		return errors.New("failed to send OTP email")
+	}
+
+	return nil
+}
+
+func VerifyOTPService(input VerifyOTPInput) error {
+	verify, err := repositories.FindOTPCode(input.Email, input.OTP)
+	if err != nil {
+		return errors.New("Invalid or expired OTP")
+	}
+
+	if time.Now().After(verify.ExpiresAt) {
+		return errors.New("OTP has expired, please request a new one")
+	}
+
+	return repositories.MarkOTPUsed(input.Email, input.OTP)
+}
+
+func CheckSchoolIDService(input CheckSchoolIDInput) error {
+	user, err := repositories.FindUserBySchoolID(input.SchoolID)
+	if err == nil && user != nil {
+		return errors.New("School ID already registered")
+	}
+
+	return nil
+}
 func RegisterUser(input RegisterInput) (*model.User, error) {
 	existing, err := repositories.FindUserByEmailOrSchoolID(input.Email, input.SchoolID)
 	if err == nil && existing.ID != 0 {
@@ -48,14 +117,15 @@ func RegisterUser(input RegisterInput) (*model.User, error) {
 	}
 
 	user := &model.User{
-		FirstName: input.FirstName,
-		LastName:  input.LastName,
-		Email:     input.Email,
-		SchoolID:  input.SchoolID,
-		Program:   input.Program,
-		Year:      input.Year,
-		Status:    status.UserStatusNew,
-		Password:  hashedPassword,
+		FirstName:     input.FirstName,
+		LastName:      input.LastName,
+		Email:         input.Email,
+		SchoolID:      input.SchoolID,
+		Program:       input.Program,
+		Year:          input.Year,
+		Status:        status.UserStatusNew,
+		Password:      hashedPassword,
+		SchoolIDImage: input.SchoolIDImage,
 	}
 
 	if err := repositories.CreateUser(user); err != nil {

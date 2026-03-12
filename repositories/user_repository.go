@@ -10,11 +10,43 @@ func CreateUser(user *model.User) error {
 	return database.DB.Create(user).Error
 }
 
+// Looks if the email exists
+func FindUserByEmail(email string) (*model.User, error) {
+	var user model.User
+	result := database.DB.Where("email = ?", email).First(&user)
+	return &user, result.Error
+}
+
+// Looks if the email exists
+func FindUserBySchoolID(school_id string) (*model.User, error) {
+	var user model.User
+	result := database.DB.Where("school_id = ?", school_id).First(&user)
+	return &user, result.Error
+}
+
 // Looks if the email or school id exists (depends on what the user inputs betweeen those two) then collects details
 func FindUserByEmailOrSchoolID(email, school_id string) (*model.User, error) {
 	var user model.User
 	result := database.DB.Where("email = ? OR school_id = ?", email, school_id).First(&user)
 	return &user, result.Error
+}
+
+// Deletes old OTP for user that wants to create new OTP before saving it
+func CreateOTPCode(code *model.OTPCode) error {
+	database.DB.Where("email = ? AND used = false", code.Email).Delete(&model.OTPCode{})
+	return database.DB.Create(code).Error
+}
+
+// Looks for the OTP and see if it is already used
+func FindOTPCode(email, otp string) (*model.OTPCode, error) {
+	var code model.OTPCode
+	result := database.DB.Where("email = ? AND otp = ? AND used = false", email, otp).First(&code)
+	return &code, result.Error
+}
+
+// Updates password reset token as used
+func MarkOTPUsed(email, otp string) error {
+	return database.DB.Model(&model.OTPCode{}).Where("email = ? AND otp = ?", email, otp).Update("used", true).Error
 }
 
 // Deletes old token for user that wants to create new token before saving it
