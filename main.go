@@ -15,12 +15,21 @@ import (
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Warning: No .env file found, using system env")
 	}
 
 	database.ConnectDB()
 
-	database.DB.AutoMigrate(&model.User{}, &model.PasswordReset{})
+	err := database.DB.AutoMigrate(
+		&model.User{},
+		&model.PasswordReset{},
+		&model.Transaction{},
+		&model.Penalty{},
+		&model.OTPCode{},
+	)
+	if err != nil {
+		log.Fatal("Migration Failed: ", err)
+	}
 
 	app := fiber.New()
 
@@ -28,14 +37,14 @@ func main() {
 
 	routes.Setup(app)
 
-	// just a health check
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"message": "API is running"})
+		return c.JSON(fiber.Map{"message": "SmartLib API is running"})
 	})
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
+
 	log.Fatal(app.Listen(":" + port))
 }
