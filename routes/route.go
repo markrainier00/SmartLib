@@ -22,6 +22,11 @@ func Setup(app *fiber.App) {
 	transactions.Get("/pending-all", handler.GetAllPending)
 	transactions.Put("/release", handler.ReleaseBook)
 
+	// ==========================================
+	// 🚀 BAGONG DAGDAG: REJECT ROUTE
+	// ==========================================
+	transactions.Put("/reject", handler.RejectBook)
+
 	// 📊 Dashboard Stats
 	// Handler: student_transaction_handler.go
 	api.Get("/admin/stats", handler.GetDashboardStats)

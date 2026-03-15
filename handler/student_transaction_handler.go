@@ -10,7 +10,7 @@ import (
 func BorrowBook(c *fiber.Ctx) error {
 	var input services.BorrowInput
 	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"message": "Invalid input format"})
+		return c.Status(400).JSON(fiber.Map{"message": "Invalid input format", "isSuccess": false})
 	}
 
 	if err := services.BorrowBookService(input); err != nil {
@@ -21,7 +21,7 @@ func BorrowBook(c *fiber.Ctx) error {
 }
 
 func GetAllPending(c *fiber.Ctx) error {
-	requests, err := repositories.GetAllPendingRequests()
+	requests, err := repositories.GetAllRequests()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"message": "Database error", "isSuccess": false})
 	}
@@ -63,4 +63,21 @@ func ReleaseBook(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"message": err.Error(), "isSuccess": false})
 	}
 	return c.JSON(fiber.Map{"message": "Book released!", "isSuccess": true})
+}
+
+func RejectBook(c *fiber.Ctx) error {
+	type Req struct {
+		SchoolID string `json:"school_id"`
+	}
+	var body Req
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"message": "Invalid request", "isSuccess": false})
+	}
+
+	err := repositories.UpdateTransactionStatus(body.SchoolID, "Pending", "Rejected")
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"message": "Failed to reject request", "isSuccess": false})
+	}
+
+	return c.JSON(fiber.Map{"isSuccess": true, "message": "Request rejected successfully"})
 }
